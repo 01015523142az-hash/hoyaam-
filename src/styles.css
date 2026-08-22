@@ -1542,3 +1542,308 @@ bdi, .mono-data {
   font-size: 11px;
   color: var(--danger);
 }
+
+/* Notification Dropdown & Alert Panel */
+.notif-wrapper {
+  position: relative;
+}
+
+.notif-badge-pulse {
+  animation: pulse-badge 2s infinite;
+}
+
+@keyframes pulse-badge {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(229, 72, 77, 0.7); }
+  70% { transform: scale(1.08); box-shadow: 0 0 0 6px rgba(229, 72, 77, 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(229, 72, 77, 0); }
+}
+
+.notif-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  inset-inline-end: 0;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.notif-header {
+  padding: 14px 16px;
+  background: var(--inset);
+  border-block-end: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.notif-header-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notif-list {
+  max-height: 400px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.notif-item {
+  padding: 12px 16px;
+  border-block-end: 1px solid var(--border);
+  display: flex;
+  gap: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.notif-item:hover {
+  background: var(--inset);
+}
+
+.notif-item.urgent {
+  background: rgba(195, 39, 44, 0.05);
+}
+
+.notif-item-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.notif-item-icon.danger {
+  background: rgba(195, 39, 44, 0.15);
+  color: var(--danger);
+}
+
+.notif-item-icon.warn {
+  background: rgba(217, 114, 10, 0.15);
+  color: var(--warn);
+}
+
+.notif-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-block-end: 2px;
+}
+
+.notif-item-meta {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* Legal Document Generator Layout */
+.generator-layout {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 20px;
+  height: calc(100vh - 160px);
+}
+
+@media (max-width: 1024px) {
+  .generator-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+}
+
+.generator-controls-pane {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+.generator-preview-pane {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.generator-preview-toolbar {
+  padding: 12px 18px;
+  background: var(--inset);
+  border-block-end: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.generator-preview-canvas {
+  flex: 1;
+  padding: 30px;
+  background: var(--bg);
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+}
+
+/* Authentic Egyptian Court Legal Parchment Document */
+.legal-parchment {
+  width: 100%;
+  max-width: 780px;
+  background: #FFFFFF;
+  color: #111827;
+  border: 2px solid #D1D5DB;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  padding: 45px 55px;
+  font-family: var(--font-doc);
+  font-size: 16px;
+  line-height: 2;
+  position: relative;
+  border-radius: 4px;
+}
+
+[data-theme="dark"] .legal-parchment {
+  background: #1C2029;
+  color: #E2E8F0;
+  border-color: #334155;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.legal-header-emblem {
+  text-align: center;
+  border-block-end: 2px double #9CA3AF;
+  padding-block-end: 14px;
+  margin-block-end: 20px;
+}
+
+.legal-basmalah {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text);
+  margin-block-end: 6px;
+}
+
+.legal-sub-header {
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.legal-body-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-align: justify;
+}
+
+.legal-token-highlight {
+  background: rgba(253, 98, 98, 0.15);
+  color: var(--accent);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 600;
+  font-family: var(--font-ui);
+}
+
+/* AI Summary Card in Search & Dashboard */
+.ai-summary-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(176, 32, 110, 0.12), rgba(253, 98, 98, 0.12));
+  border: 1px solid rgba(176, 32, 110, 0.25);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.ai-summary-box {
+  background: rgba(176, 32, 110, 0.04);
+  border: 1px solid rgba(176, 32, 110, 0.2);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  margin-block-start: 10px;
+}
+
+.ai-summary-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-block-end: 4px;
+}
+
+.ai-summary-content {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+/* Upload Presets */
+.upload-presets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  margin-block-start: 14px;
+}
+
+.upload-preset-card {
+  background: var(--card);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.upload-preset-card:hover {
+  border-color: var(--accent);
+  background: rgba(253, 98, 98, 0.05);
+  transform: translateY(-2px);
+}
+
+/* Toast Message */
+.app-toast {
+  position: fixed;
+  bottom: 24px;
+  inset-inline-start: 24px;
+  background: var(--text);
+  color: #fff;
+  padding: 12px 20px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  animation: toast-in 0.3s ease;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+

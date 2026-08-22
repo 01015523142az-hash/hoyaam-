@@ -1,11 +1,15 @@
 import { MOCK } from './mockData.js';
+import { getUrgentAlerts, renderNotificationDropdown } from './notifications.js';
+import { renderDocumentGeneratorScreen } from './documentGenerator.js';
+import { renderArchiveSearchScreen } from './aiSearch.js';
+import { PDF_PRESETS, processUploadedPdf } from './pdfProcessor.js';
 
-// Expose MOCK globally as the single database seam
+// Expose MOCK globally as single database seam
 window.MOCK = MOCK;
 
-// Application State
-const state = {
-  activeScreen: 'dashboard', // dashboard, matters, matter-detail, roll, deadlines, upload, review, search, rules
+// Global Application State
+export const state = {
+  activeScreen: 'dashboard', // dashboard, matters, matter-detail, roll, deadlines, upload, review, search, rules, generator
   activeMatterId: 'mat_101',
   matterActiveTab: 'overview',
   activeDocumentId: 'doc_401',
@@ -23,7 +27,11 @@ const state = {
   rollFilterMineOnly: false,
   showRuleModal: false,
   editingRule: null,
-  ruleFormErrors: {}
+  ruleFormErrors: {},
+  showNotifDropdown: false,
+  generatorTemplateId: 'tmpl_1',
+  generatorCustomVars: {},
+  toastMessage: null
 };
 
 // Utility Helpers
@@ -43,14 +51,21 @@ function getDaysRemaining(dueDateStr) {
   return diffDays;
 }
 
-// Render Header & Shell Navigation
+export function showToast(msg) {
+  state.toastMessage = msg;
+  renderApp();
+  setTimeout(() => {
+    state.toastMessage = null;
+    renderApp();
+  }, 3000);
+}
+
+// App Initialization
 export function initApp() {
-  // Theme init
   const savedTheme = localStorage.getItem('app-theme') || 'light';
   state.theme = savedTheme;
   document.documentElement.setAttribute('data-theme', state.theme);
 
-  // Global event delegation for data-action
   document.addEventListener('click', handleActionClick);
   document.addEventListener('input', handleActionInput);
 
@@ -66,6 +81,13 @@ function toggleTheme() {
 
 function handleActionClick(e) {
   const target = e.target.closest('[data-action]');
+  
+  // Close notification dropdown if clicked outside
+  if (!e.target.closest('.notif-wrapper') && state.showNotifDropdown) {
+    state.showNotifDropdown = false;
+    renderApp();
+  }
+
   if (!target) return;
 
   const action = target.getAttribute('data-action');
@@ -75,18 +97,27 @@ function handleActionClick(e) {
   const tabName = target.getAttribute('data-tab');
   const dateVal = target.getAttribute('data-date');
   const ruleId = target.getAttribute('data-rule-id');
+  const presetId = target.getAttribute('data-preset-id');
+  const term = target.getAttribute('data-term');
 
   switch (action) {
     case 'nav-screen': {
       const screen = target.getAttribute('data-screen');
       if (screen) {
         state.activeScreen = screen;
+        state.showNotifDropdown = false;
         renderApp();
       }
       break;
     }
+
     case 'toggle-theme':
       toggleTheme();
+      break;
+
+    case 'toggle-notifs':
+      state.showNotifDropdown = !state.showNotifDropdown;
+      renderApp();
       break;
 
     case 'open-matter':
@@ -94,6 +125,7 @@ function handleActionClick(e) {
         state.activeMatterId = matterId;
         state.matterActiveTab = 'overview';
         state.activeScreen = 'matter-detail';
+        state.showNotifDropdown = false;
         renderApp();
       }
       break;
@@ -110,7 +142,7 @@ function handleActionClick(e) {
       const dl = window.MOCK.deadlines.find(d => d.id === deadlineId);
       if (dl) {
         dl.status = 'confirmed';
-        renderApp();
+        showToast('تم تأكيد الميعاد القانوني بنجاح وإدراجه بالسجل الرسمي');
       }
       break;
     }
@@ -157,6 +189,7 @@ function handleActionClick(e) {
           x.review_state = 'accepted';
         }
       });
+      showToast('تم اعتماد جميع الحقول المستخرجة من المستند بنجاح');
       renderApp();
       break;
     }
@@ -166,6 +199,7 @@ function handleActionClick(e) {
       if (currentDoc) {
         currentDoc.ocr_status = 'done';
       }
+      showToast('تم حفظ المستند واعتماده في ملف القضية');
       state.activeScreen = 'upload';
       renderApp();
       break;
@@ -228,37 +262,121 @@ function handleActionClick(e) {
       handleSaveRule();
       break;
 
-    case 'toggle-rule-active':
-      if (ruleId) {
-        const r = window.MOCK.deadline_rules.find(rule => rule.id === ruleId);
-        if (r) {
-          r.active = !r.active;
-          renderApp();
-        }
-      }
-      break;
-
     case 'trigger-upload': {
       const fileInput = document.getElementById('file-upload-input');
       if (fileInput) fileInput.click();
       break;
     }
 
+    case 'process-preset-pdf': {
+      if (presetId) {
+        const preset = PDF_PRESETS.find(p => p.id === presetId);
+        if (preset) {
+          processUploadedPdf(preset, state);
+          showToast(`تم استخراج رقم القضية (${preset.extractions[0]?.field_value}) والجلسة والمحكمة آلياً بالذكاء الاصطناعي`);
+          renderApp();
+        }
+      }
+      break;
+    }
+
     case 'search-archive-trigger':
       renderApp();
       break;
+
+    case 'quick-search':
+      if (term) {
+        state.archiveSearchQuery = term;
+        state.activeScreen = 'search';
+        renderApp();
+      }
+      break;
+
+    case 'ai-enhance-document': {
+      showToast('✨ قام الذكاء الاصطناعي بتدقيق الأسانيد وتدعيم الدفوع الموضوعية والشكلية');
+      break;
+    }
+
+    case 'copy-generated-doc': {
+      const textEl = document.getElementById('legal-rendered-text');
+      if (textEl) {
+        navigator.clipboard?.writeText(textEl.innerText);
+        showToast('📋 تم نسخ نص الوثيقة القانونية إلى الحافظة بنجاح');
+      }
+      break;
+    }
+
+    case 'save-doc-to-matter': {
+      const activeM = window.MOCK.matters.find(m => m.id === state.activeMatterId) || window.MOCK.matters[0];
+      const newDoc = {
+        id: 'doc_' + (window.MOCK.documents.length + 401),
+        matter_id: activeM.id,
+        filename: `مسودة_مولدة_${state.generatorTemplateId}_${activeM.case_number}.pdf`,
+        page_count: 3,
+        uploaded_at: 'الآن (مولد آلياً)',
+        ocr_status: 'done'
+      };
+      window.MOCK.documents.unshift(newDoc);
+      showToast(`تم حفظ المحرر الرسمي بملف القضية (${activeM.case_number})`);
+      state.activeScreen = 'matter-detail';
+      state.matterActiveTab = 'documents';
+      renderApp();
+      break;
+    }
+
+    case 'open-generator-for-matter': {
+      if (matterId) state.activeMatterId = matterId;
+      state.activeScreen = 'generator';
+      renderApp();
+      break;
+    }
   }
 }
 
 function handleActionInput(e) {
   const target = e.target;
   const action = target.getAttribute('data-action');
+  const genVar = target.getAttribute('data-gen-var');
 
   if (action === 'matter-search') {
     state.matterSearchQuery = target.value;
     renderMatterListTable();
   } else if (action === 'archive-search') {
     state.archiveSearchQuery = target.value;
+  } else if (genVar) {
+    if (!state.generatorCustomVars) state.generatorCustomVars = {};
+    state.generatorCustomVars[genVar] = target.value;
+    
+    // Update live preview directly without re-rendering entire screen
+    const liveTextEl = document.getElementById('legal-rendered-text');
+    if (liveTextEl) {
+      const templates = window.MOCK?.templates || [];
+      const selectedTemplate = templates.find(t => t.id === state.generatorTemplateId) || templates[0];
+      const matters = window.MOCK?.matters || [];
+      const activeMatter = matters.find(m => m.id === state.activeMatterId) || matters[0];
+      const currentVars = {
+        client_name: activeMatter.client_name,
+        opponent_name: activeMatter.opponent_name,
+        opponent_address: '٢٤ شارع مصدق - الدقي - الجيزة',
+        case_number: activeMatter.case_number,
+        court: activeMatter.court,
+        circuit: activeMatter.circuit,
+        court_address: 'مجمع محاكم العباسية - ميدان العباسية - القاهرة',
+        subject: activeMatter.subject,
+        next_hearing_date: activeMatter.next_hearing_date,
+        assigned_to: activeMatter.assigned_to,
+        date: '2026-08-22',
+        day_name: 'السبت',
+        trigger_date: '2026-07-14',
+        claim_amount: '١٨,٥٠٠,٠٠٠ جنيه مصري',
+        ...state.generatorCustomVars
+      };
+      let text = selectedTemplate.template_content;
+      Object.keys(currentVars).forEach(k => {
+        text = text.replace(new RegExp(`{{${k}}}`, 'g'), currentVars[k] || '');
+      });
+      liveTextEl.innerText = text;
+    }
   }
 }
 
@@ -306,6 +424,7 @@ function handleSaveRule() {
   state.showRuleModal = false;
   state.editingRule = null;
   state.ruleFormErrors = {};
+  showToast('تم حفظ قاعدة الميعاد القانوني بنجاح');
   renderApp();
 }
 
@@ -314,6 +433,7 @@ export function renderApp() {
   const root = document.getElementById('root');
   if (!root) return;
 
+  const urgentAlerts = getUrgentAlerts();
   const activeDeadlines = window.MOCK.deadlines.filter(d => d.status === 'provisional').length;
   const pendingReviewDocs = window.MOCK.documents.filter(d => d.ocr_status === 'review').length;
 
@@ -349,6 +469,15 @@ export function renderApp() {
               <span class="nav-badge"><bdi>${window.MOCK.matters.length}</bdi></span>
             </button>
           </li>
+          <li class="nav-item ${state.activeScreen === 'generator' ? 'active' : ''}">
+            <button data-action="nav-screen" data-screen="generator">
+              <span class="nav-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+              </span>
+              <span>توليد وثيقة قانونية</span>
+              <span class="chip" style="background:var(--text-2); color:#fff; font-size:10px; padding:1px 6px;">ذكاء اصطناعي</span>
+            </button>
+          </li>
           <li class="nav-item ${state.activeScreen === 'roll' ? 'active' : ''}">
             <button data-action="nav-screen" data-screen="roll">
               <span class="nav-icon">
@@ -372,13 +501,13 @@ export function renderApp() {
               <span class="nav-icon">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
               </span>
-              <span>رفع المستندات</span>
+              <span>رفع المستندات (PDF)</span>
             </button>
           </li>
           <li class="nav-item ${state.activeScreen === 'review' ? 'active' : ''}">
             <button data-action="nav-screen" data-screen="review">
               <span class="nav-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
               </span>
               <span>المراجعة</span>
               ${pendingReviewDocs > 0 ? `<span class="nav-badge danger"><bdi>${pendingReviewDocs}</bdi></span>` : ''}
@@ -435,10 +564,17 @@ export function renderApp() {
               `}
             </button>
 
-            <button class="icon-btn" title="التنبيهات الإجرائية">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
-              <span class="notif-badge"><bdi>٣</bdi></span>
-            </button>
+            <!-- Notifications Bell with Real Counter Badge -->
+            <div class="notif-wrapper">
+              <button class="icon-btn" data-action="toggle-notifs" title="تنبيهات الجلسات والمواعيد القريبة (< 3 أيام)">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                ${urgentAlerts.totalCount > 0 ? `
+                  <span class="notif-badge notif-badge-pulse"><bdi>${urgentAlerts.totalCount}</bdi></span>
+                ` : ''}
+              </button>
+
+              ${state.showNotifDropdown ? renderNotificationDropdown(state) : ''}
+            </div>
           </div>
         </header>
 
@@ -449,8 +585,11 @@ export function renderApp() {
       </div>
     </div>
 
-    <!-- Rule Editor Slide-over / Modal -->
+    <!-- Rule Editor Modal -->
     ${state.showRuleModal ? renderRuleModal() : ''}
+
+    <!-- Toast Notification -->
+    ${state.toastMessage ? `<div class="app-toast"><span>🔔</span><span>${state.toastMessage}</span></div>` : ''}
   `;
 }
 
@@ -462,6 +601,8 @@ function renderCurrentScreen() {
       return renderMatterListScreen();
     case 'matter-detail':
       return renderMatterDetailScreen();
+    case 'generator':
+      return renderDocumentGeneratorScreen(state);
     case 'roll':
       return renderHearingRollScreen();
     case 'deadlines':
@@ -471,7 +612,7 @@ function renderCurrentScreen() {
     case 'review':
       return renderReviewQueueScreen();
     case 'search':
-      return renderArchiveSearchScreen();
+      return renderArchiveSearchScreen(state);
     case 'rules':
       return renderRulesEditorScreen();
     default:
@@ -479,12 +620,13 @@ function renderCurrentScreen() {
   }
 }
 
-// 1. Dashboard Screen (Batch 1)
+// 1. Dashboard Screen
 function renderDashboardScreen() {
   const todayHearings = window.MOCK.hearings.filter(h => h.hearing_date === '2026-08-22');
   const weekHearings = window.MOCK.hearings;
   const overdueDeadlines = window.MOCK.deadlines.filter(d => getDaysRemaining(d.due_date) < 0);
   const pendingReviewDocs = window.MOCK.documents.filter(d => d.ocr_status === 'review');
+  const urgentAlerts = getUrgentAlerts();
 
   return `
     <div class="page-header">
@@ -493,9 +635,9 @@ function renderDashboardScreen() {
         <div class="page-subtitle">السبت <bdi>٢٢ أغسطس ٢٠٢٦</bdi> — تقرير الرول والمواعيد الحتمية للفرع الرئيسي</div>
       </div>
       <div style="display:flex; gap:10px;">
-        <button class="btn btn-outline" data-action="nav-screen" data-screen="upload">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-          رفع ملف دعوى
+        <button class="btn btn-outline" data-action="nav-screen" data-screen="generator">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+          توليد صحيفة / مذكرة
         </button>
         <button class="btn btn-primary" data-action="nav-screen" data-screen="roll">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg>
@@ -503,6 +645,30 @@ function renderDashboardScreen() {
         </button>
       </div>
     </div>
+
+    <!-- Urgent Notification Alert Banner (< 3 Days) -->
+    ${urgentAlerts.totalCount > 0 ? `
+      <div style="background:linear-gradient(135deg, rgba(195, 39, 44, 0.08), rgba(217, 114, 10, 0.08)); border:1px solid rgba(195, 39, 44, 0.3); border-radius:var(--radius-lg); padding:14px 18px; margin-block-end:20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div style="width:36px; height:36px; border-radius:50%; background:var(--danger); color:#fff; display:flex; align-items:center; justify-content:center;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+          </div>
+          <div>
+            <div style="font-size:14px; font-weight:700; color:var(--text);">
+              تنبيه حتمي: يوجد <bdi>${urgentAlerts.totalCount}</bdi> إجراءات قضائية وجلسات خلال أقل من ٣ أيام
+            </div>
+            <div style="font-size:12px; color:var(--text-dim);">
+              تشمل <bdi>${urgentAlerts.hearings.length}</bdi> جلسات محكمة و <bdi>${urgentAlerts.deadlines.length}</bdi> مواعيد قانونية ملزمة
+            </div>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-primary btn-sm" data-action="toggle-notifs">
+            استعراض التنبيهات بالتفصيل
+          </button>
+        </div>
+      </div>
+    ` : ''}
 
     <!-- Five Stat Tiles -->
     <div class="stat-grid">
@@ -527,9 +693,9 @@ function renderDashboardScreen() {
         <div class="stat-sub">مستخرجة آلياً عبر الذكاء الاصطناعي</div>
       </div>
       <div class="stat-tile">
-        <div class="stat-label">مسودات بانتظار الاعتماد</div>
-        <div class="stat-number"><bdi>٢</bdi></div>
-        <div class="stat-sub">مذكرات استئناف وطعون</div>
+        <div class="stat-label">قوالب الصياغة المعتمدة</div>
+        <div class="stat-number"><bdi>${window.MOCK.templates?.length || 4}</bdi></div>
+        <div class="stat-sub">جاهزة للتوليد والدمج</div>
       </div>
     </div>
 
@@ -561,6 +727,11 @@ function renderDashboardScreen() {
                   <div class="timeline-sub">
                     <strong>قرار الجلسة السابقة:</strong> ${h.adjournment_reason}
                   </div>
+                  <div style="margin-block-start:6px; display:flex; gap:6px;">
+                    <button class="btn btn-outline btn-sm" style="font-size:11px; padding:2px 8px;" data-action="open-generator-for-matter" data-matter-id="${h.matter_id}">
+                      توليد مذكرة للجلسة
+                    </button>
+                  </div>
                 </div>
               </div>
             `;
@@ -568,53 +739,73 @@ function renderDashboardScreen() {
         </div>
       </div>
 
-      <!-- Column 2: Overdue and Upcoming Deadlines -->
-      <div class="dash-panel">
-        <div class="panel-head">
-          <div class="panel-title">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-            المواعيد القانونية الحتمية
+      <!-- Column 2: Legal Deadlines & AI Archive Highlights -->
+      <div style="display:flex; flex-direction:column; gap:20px;">
+        <div class="dash-panel">
+          <div class="panel-head">
+            <div class="panel-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              المواعيد القانونية الحتمية
+            </div>
+            <button class="btn btn-outline btn-sm" data-action="nav-screen" data-screen="deadlines">عرض الكل</button>
           </div>
-          <button class="btn btn-outline btn-sm" data-action="nav-screen" data-screen="deadlines">عرض الكل</button>
+
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            ${window.MOCK.deadlines.slice(0, 3).map(dl => {
+              const m = window.MOCK.matters.find(item => item.id === dl.matter_id) || {};
+              const days = getDaysRemaining(dl.due_date);
+              const isOverdue = days < 0;
+              const isProvisional = dl.status === 'provisional';
+
+              return `
+                <div class="deadline-row ${isOverdue ? 'overdue' : (days <= 7 ? 'this-week' : 'upcoming')}">
+                  <div class="deadline-info">
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                      <span class="deadline-title">${dl.title}</span>
+                      <span class="chip ${isProvisional ? 'chip-provisional' : 'chip-confirmed'}">
+                        ${isProvisional ? 'مبدئي (يتطلب تأكيد)' : 'مؤكد'}
+                      </span>
+                    </div>
+                    <div class="deadline-meta">
+                      <span>${formatCaseNumber(m.case_number || '')}</span>
+                      <span>الاستحقاق: ${formatDate(dl.due_date)} (${isOverdue ? `<span class="chip-overdue-days">متأخر <bdi>${Math.abs(days)}</bdi> يوم</span>` : `متبقي <bdi>${days}</bdi> يوم`})</span>
+                      <span class="citation-tag">${dl.rule_citation}</span>
+                    </div>
+                  </div>
+                  ${isProvisional ? `
+                    <button class="btn btn-good btn-sm" data-action="confirm-deadline" data-deadline-id="${dl.id}">
+                      تأكيد الميعاد
+                    </button>
+                  ` : ''}
+                </div>
+              `;
+            }).join('')}
+          </div>
         </div>
 
-        <div style="display:flex; flex-direction:column; gap:10px;">
-          ${window.MOCK.deadlines.slice(0, 4).map(dl => {
-            const m = window.MOCK.matters.find(item => item.id === dl.matter_id) || {};
-            const days = getDaysRemaining(dl.due_date);
-            const isOverdue = days < 0;
-            const isProvisional = dl.status === 'provisional';
+        <!-- AI Legal Precedents Card in Dashboard -->
+        <div class="dash-panel" style="border-inline-start:3px solid var(--text-2);">
+          <div class="panel-head">
+            <div class="panel-title" style="color:var(--text-2);">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"></path></svg>
+              ملخص الذكاء الاصطناعي لأهم السوابق بالأرشيف
+            </div>
+            <button class="btn btn-outline btn-sm" data-action="nav-screen" data-screen="search">استكشاف الأرشيف</button>
+          </div>
 
-            return `
-              <div class="deadline-row ${isOverdue ? 'overdue' : (days <= 7 ? 'this-week' : 'upcoming')}">
-                <div class="deadline-info">
-                  <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-                    <span class="deadline-title">${dl.title}</span>
-                    <span class="chip ${isProvisional ? 'chip-provisional' : 'chip-confirmed'}">
-                      ${isProvisional ? 'مبدئي (يتطلب تأكيد)' : 'مؤكد'}
-                    </span>
-                  </div>
-                  <div class="deadline-meta">
-                    <span>${formatCaseNumber(m.case_number || '')}</span>
-                    <span>الاستحقاق: ${formatDate(dl.due_date)} (${isOverdue ? `<span class="chip-overdue-days">متأخر <bdi>${Math.abs(days)}</bdi> يوم</span>` : `متبقي <bdi>${days}</bdi> يوم`})</span>
-                    <span class="citation-tag">${dl.rule_citation}</span>
-                  </div>
-                </div>
-                ${isProvisional ? `
-                  <button class="btn btn-good btn-sm" data-action="confirm-deadline" data-deadline-id="${dl.id}">
-                    تأكيد الميعاد
-                  </button>
-                ` : ''}
-              </div>
-            `;
-          }).join('')}
+          <div style="font-size:13px; color:var(--text); line-height:1.7;">
+            ${window.MOCK.archive_corpus[0]?.ai_summary || 'تطبيق قواعد المسؤولية العقدية وجواز توقيع غرامات التأخير الاتفاقية عند الإخلال بالجدول الزمني.'}
+            <div style="margin-block-start:6px; font-size:12px; color:var(--text-dim);">
+              <strong>المستند المستند إليه:</strong> ${window.MOCK.archive_corpus[0]?.matter_title}
+            </div>
+          </div>
         </div>
       </div>
     </div>
   `;
 }
 
-// 2. Matter List Screen (Batch 1)
+// 2. Matter List Screen
 function renderMatterListScreen() {
   return `
     <div class="page-header">
@@ -622,10 +813,15 @@ function renderMatterListScreen() {
         <h1 class="page-title">قائمة القضايا والملفات</h1>
         <div class="page-subtitle">إجمالي <bdi>${window.MOCK.matters.length}</bdi> ملفات دعاوى متداولة ومقيدة</div>
       </div>
-      <button class="btn btn-primary" data-action="nav-screen" data-screen="upload">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-        قيد دعوى جديدة
-      </button>
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-outline" data-action="nav-screen" data-screen="generator">
+          ✨ توليد وثيقة لقضية
+        </button>
+        <button class="btn btn-primary" data-action="nav-screen" data-screen="upload">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          رفع ملف دعوى (PDF)
+        </button>
+      </div>
     </div>
 
     <div class="table-card">
@@ -697,6 +893,7 @@ function renderMatterListTableHTML() {
           <th>الجلسة القادمة</th>
           <th>المحامي المسؤول</th>
           <th>الحالة</th>
+          <th>الإجراء</th>
         </tr>
       </thead>
       <tbody>
@@ -712,6 +909,11 @@ function renderMatterListTableHTML() {
             <td>
               <span class="chip ${m.status === 'متداولة' ? 'chip-confirmed' : 'chip-stage'}">${m.status}</span>
             </td>
+            <td onclick="event.stopPropagation();">
+              <button class="btn btn-outline btn-sm" data-action="open-generator-for-matter" data-matter-id="${m.id}" title="توليد صحيفة أو مذكرة للقضية">
+                ✍️ صياغة
+              </button>
+            </td>
           </tr>
         `).join('')}
       </tbody>
@@ -726,7 +928,7 @@ function renderMatterListTable() {
   }
 }
 
-// 3. Matter Detail Screen (Batch 1 & 2 Tab extensions)
+// 3. Matter Detail Screen
 function renderMatterDetailScreen() {
   const m = window.MOCK.matters.find(item => item.id === state.activeMatterId) || window.MOCK.matters[0];
   const matterHearings = window.MOCK.hearings.filter(h => h.matter_id === m.id);
@@ -735,7 +937,6 @@ function renderMatterDetailScreen() {
   const matterDeadlines = window.MOCK.deadlines.filter(d => d.matter_id === m.id);
 
   return `
-    <!-- Case Header -->
     <div class="matter-header-card">
       <div class="matter-header-top">
         <div>
@@ -749,6 +950,9 @@ function renderMatterDetailScreen() {
           </h1>
         </div>
         <div style="display:flex; gap:8px;">
+          <button class="btn btn-outline btn-sm" data-action="open-generator-for-matter" data-matter-id="${m.id}">
+            ✨ توليد وثيقة لهذه القضية
+          </button>
           <span class="chip chip-confirmed" style="font-size:14px; padding-inline:14px;">${m.status}</span>
         </div>
       </div>
@@ -799,6 +1003,11 @@ function renderMatterTabContent(m, hearings, docs, chron, deadlines) {
             <div style="margin-block-start:14px; padding:12px; background:var(--inset); border-radius:var(--radius-sm);">
               <strong>الدفوع القانونية الأساسية:</strong> الدفع بسقوط الحق في الدفع بعدم التنفيذ طبقاً للمادة ١٦١ مدني، والدفع بالبطلان الإجرائي لإعادة الإعلان.
             </div>
+            <div style="margin-block-start:12px;">
+              <button class="btn btn-primary btn-sm" data-action="open-generator-for-matter" data-matter-id="${m.id}">
+                ✍️ صياغة صحيفة استئناف أو مذكرة دفاع فورية
+              </button>
+            </div>
           </div>
 
           <div class="dash-panel">
@@ -830,7 +1039,6 @@ function renderMatterTabContent(m, hearings, docs, chron, deadlines) {
               <div><strong>الصفة:</strong> الممثل القانوني للشركة (رئيس مجلس الإدارة)</div>
               <div><strong>السجل التجاري:</strong> <bdi>٤٨٢٩٠١</bdi> استثمار القاهرة</div>
               <div><strong>محل الإقامة المختار:</strong> مكتب الأستاذ / أحمد عبد الرحمن المحامي</div>
-              <div><strong>رقم التوكيل الرسمي:</strong> <bdi>توكيل عام قضايا رقم ٨١٢٢ لسنة ٢٠٢٤ توثيق الأهرام</bdi></div>
             </div>
           </div>
 
@@ -847,7 +1055,6 @@ function renderMatterTabContent(m, hearings, docs, chron, deadlines) {
               <div><strong>الصفة:</strong> بصفته الممثل القانوني للمجموعة</div>
               <div><strong>موطن الإعلان الأصلي:</strong> ٢٤ شارع مصدق - الدقي - الجيزة</div>
               <div><strong>حالة الإعلان:</strong> <span class="chip chip-confirmed">تم الإعلان لجهة الإدارة</span></div>
-              <div><strong>محامي الخصم:</strong> مكتب الأستاذ / مدحت السعدني المحامي بالنقض</div>
             </div>
           </div>
         </div>
@@ -953,9 +1160,8 @@ function renderMatterTabContent(m, hearings, docs, chron, deadlines) {
   }
 }
 
-// 4. Chronology Timeline (Batch 2)
+// 4. Chronology Timeline
 function renderChronologyView(chronEntries) {
-  // Group by year
   const grouped = {};
   chronEntries.forEach(entry => {
     const year = entry.event_date.split('-')[0];
@@ -992,30 +1198,49 @@ function renderChronologyView(chronEntries) {
   `;
 }
 
-// 5. Upload Screen (Batch 2)
+// 5. Upload Screen with Intelligent PDF Extractor & Sample Presets
 function renderUploadScreen() {
   const files = window.MOCK.documents;
 
   return `
     <div class="page-header">
       <div>
-        <h1 class="page-title">رفع ومعالجة ملفات القضايا</h1>
-        <div class="page-subtitle">محرك المعالجة والاستخراج الآلي للمستندات القضائية</div>
+        <h1 class="page-title">رفع ومعالجة ملفات القضايا (PDF)</h1>
+        <div class="page-subtitle">محرك الذكاء الاصطناعي لاستخراج أرقام القضايا، تواريخ الجلسات، والمحاكم تلقائياً</div>
       </div>
     </div>
 
     <!-- Drag & Drop Zone -->
     <div class="upload-zone" data-action="trigger-upload">
-      <input type="file" id="file-upload-input" style="display:none;" onchange="window.handleFileSelect(event)">
+      <input type="file" id="file-upload-input" style="display:none;" accept=".pdf,application/pdf" onchange="window.handleFileSelect(event)">
       <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-      <div class="upload-title">اسحب وأفلت صحف الدعاوى والمستندات هنا، أو انقر للاختيار</div>
-      <div class="upload-desc">يدعم ملفات PDF الممسوحة ضوئياً وصور المستندات. يتم قراءة النصوص واستخراج الأطراف، المواعيد، والطلبات آلياً.</div>
-      <button class="btn btn-outline" style="margin-block-start:8px;">اختيار ملفات من الجهاز</button>
+      <div class="upload-title">اسحب وأفلت ملف PDF أو انقر لاختيار ملف من جهازك</div>
+      <div class="upload-desc">يقوم الذكاء الاصطناعي بقراءة النص الضوئي (OCR) واستخراج رقم الدعوى، تاريخ الجلسة، والمحكمة المختصة تلقائياً وتعبئتها في نموذج المراجعة.</div>
+      <button class="btn btn-outline" style="margin-block-start:8px;">اختيار ملف PDF من الجهاز</button>
     </div>
 
-    <!-- Files in Processing (Four Stages: في الانتظار -> جاري القراءة -> استخراج البيانات -> بانتظار المراجعة) -->
-    <div class="progress-list">
-      <h3 class="doc-heading" style="font-size:18px;">المستندات الجاري معالجتها</h3>
+    <!-- Quick PDF Presets For Instant Verification -->
+    <div style="margin-block-start:20px;">
+      <div style="font-size:13px; font-weight:700; color:var(--text); margin-block-end:8px; display:flex; align-items:center; gap:6px;">
+        <span>📄 عينات ملفات PDF قانونية للاختبار الفوري السريع:</span>
+      </div>
+      <div class="upload-presets-grid">
+        ${PDF_PRESETS.map(p => `
+          <div class="upload-preset-card" data-action="process-preset-pdf" data-preset-id="${p.id}">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+            <div style="flex:1; overflow:hidden;">
+              <div style="font-size:12px; font-weight:600; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">${p.filename}</div>
+              <div style="font-size:10px; color:var(--text-dim);"><bdi>${p.page_count}</bdi> صفحات • استخراج ذكي فوري</div>
+            </div>
+            <span class="btn btn-outline btn-sm" style="font-size:10px; padding:2px 6px;">معالجة</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <!-- Files in Processing Pipeline -->
+    <div class="progress-list" style="margin-block-start:24px;">
+      <h3 class="doc-heading" style="font-size:18px;">المستندات وسجل المعالجة</h3>
 
       ${files.map(f => {
         const stageIndex = f.ocr_status === 'queued' ? 1 : (f.ocr_status === 'reading' ? 2 : (f.ocr_status === 'extracting' ? 3 : 4));
@@ -1045,11 +1270,11 @@ function renderUploadScreen() {
               </div>
               <div class="file-step ${stageIndex >= 2 ? (stageIndex > 2 ? 'completed' : 'current') : ''}">
                 <div class="step-dot">${stageIndex > 2 ? '✓' : '٢'}</div>
-                <div class="step-name">جاري القراءة</div>
+                <div class="step-name">جاري القراءة (OCR)</div>
               </div>
               <div class="file-step ${stageIndex >= 3 ? (stageIndex > 3 ? 'completed' : 'current') : ''}">
                 <div class="step-dot">${stageIndex > 3 ? '✓' : '٣'}</div>
-                <div class="step-name">استخراج البيانات</div>
+                <div class="step-name">استخراج بالذكاء الاصطناعي</div>
               </div>
               <div class="file-step ${stageIndex >= 4 ? (f.ocr_status === 'done' ? 'completed' : 'current') : ''}">
                 <div class="step-dot">${f.ocr_status === 'done' ? '✓' : '٤'}</div>
@@ -1063,7 +1288,7 @@ function renderUploadScreen() {
   `;
 }
 
-// 6. Review Queue Screen (CRITICAL SPLIT VIEW - Batch 2)
+// 6. Review Queue Screen
 function renderReviewQueueScreen() {
   const doc = window.MOCK.documents.find(d => d.id === state.activeDocumentId) || window.MOCK.documents[0];
   const extractions = window.MOCK.extractions.filter(x => x.document_id === doc.id);
@@ -1076,7 +1301,7 @@ function renderReviewQueueScreen() {
     <div class="page-header" style="margin-block-end:16px;">
       <div>
         <h1 class="page-title">مراجعة الاستخراج الآلي والتحقق الإجرائي</h1>
-        <div class="page-subtitle">المستند: <strong>${doc.filename}</strong> — قارن الحقول المستخرجة بالمسح الضوئي</div>
+        <div class="page-subtitle">المستند: <strong>${doc.filename}</strong> — تم استخراج البيانات عبر الذكاء الاصطناعي تلقائياً</div>
       </div>
       <div style="display:flex; gap:10px;">
         <button class="btn btn-outline btn-sm" data-action="accept-all-extractions">
@@ -1198,7 +1423,7 @@ function renderReviewQueueScreen() {
   `;
 }
 
-// 7. Hearing Roll Screen (Batch 3)
+// 7. Hearing Roll Screen
 function renderHearingRollScreen() {
   const selectedHearings = window.MOCK.hearings.filter(h => {
     if (state.rollFilterMineOnly && h.matter_id !== 'mat_101' && h.matter_id !== 'mat_104') return false;
@@ -1236,7 +1461,6 @@ function renderHearingRollScreen() {
           <div class="cal-day-name">خميس</div>
           <div class="cal-day-name">جمعة</div>
 
-          <!-- Calendar Days Mock -->
           ${[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31].map(day => {
             const dStr = `2026-08-${day.toString().padStart(2, '0')}`;
             const hasHearing = window.MOCK.hearings.some(h => h.hearing_date === dStr);
@@ -1296,7 +1520,7 @@ function renderHearingRollScreen() {
   `;
 }
 
-// 8. Deadlines Screen (Batch 3)
+// 8. Deadlines Screen
 function renderDeadlinesScreen() {
   const overdue = window.MOCK.deadlines.filter(d => getDaysRemaining(d.due_date) < 0);
   const thisWeek = window.MOCK.deadlines.filter(d => {
@@ -1368,85 +1592,7 @@ function renderDeadlinesScreen() {
   `;
 }
 
-// 9. Archive Search Screen (Batch 3)
-function renderArchiveSearchScreen() {
-  const query = state.archiveSearchQuery.toLowerCase();
-  const results = window.MOCK.archive_corpus.filter(item => {
-    if (!query) return true;
-    return item.snippet.toLowerCase().includes(query) ||
-           item.document_name.toLowerCase().includes(query) ||
-           item.matter_title.toLowerCase().includes(query);
-  });
-
-  return `
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">البحث في أرشيف مذكرات ومستندات المكتب</h1>
-        <div class="page-subtitle">بحث دلالي في السوابق القضائية، الأحكام، والعقود المحفوظة</div>
-      </div>
-    </div>
-
-    <div class="search-hero-box">
-      <div class="search-input-wrapper">
-        <span class="search-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-        </span>
-        <input type="text" style="height:46px; font-size:15px;" placeholder="ابحث عن نص قانوني، صيغة عقد، أو سابقة قضائية..." data-action="archive-search" value="${state.archiveSearchQuery}">
-      </div>
-
-      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-        <select class="filter-select">
-          <option value="all">كل أنواع المستندات</option>
-          <option value="عقود">عقود واتفاقيات</option>
-          <option value="مذكرات">مذكرات دفاع</option>
-          <option value="صحف">صحف طعون</option>
-          <option value="أحكام">أحكام قضائية</option>
-        </select>
-
-        <select class="filter-select">
-          <option value="all">كل المحاكم</option>
-          <option value="استئناف">محكمة الاستئناف</option>
-          <option value="نقض">محكمة النقض</option>
-          <option value="مجلس الدولة">مجلس الدولة</option>
-        </select>
-
-        <button class="btn btn-primary" data-action="search-archive-trigger">
-          بحث في الأرشيف
-        </button>
-      </div>
-    </div>
-
-    <div class="search-results-list">
-      <div style="font-size:13px; color:var(--text-dim); margin-block-end:6px;">
-        تم العثور على <bdi>${results.length}</bdi> نتيجة مطابقة لكلمة البحث
-      </div>
-
-      ${results.map(r => `
-        <div class="search-result-card">
-          <div style="display:flex; align-items:center; justify-content:space-between;">
-            <div class="search-result-title" data-action="open-matter" data-matter-id="${r.matter_id}">
-              ${r.matter_title}
-            </div>
-            <span class="chip chip-stage">${r.doc_type}</span>
-          </div>
-
-          <div style="font-size:12px; color:var(--text-dim); display:flex; gap:14px;">
-            <span><strong>المستند:</strong> ${r.document_name}</span>
-            <span><strong>الصفحة:</strong> <bdi>${r.page}</bdi></span>
-            <span><strong>المحكمة:</strong> ${r.court}</span>
-            <span><strong>التاريخ:</strong> <bdi>${r.date}</bdi></span>
-          </div>
-
-          <div class="search-snippet">
-            ${r.snippet}
-          </div>
-        </div>
-      `).join('')}
-    </div>
-  `;
-}
-
-// 10. Rules Editor Screen (Batch 3)
+// 9. Rules Editor Screen
 function renderRulesEditorScreen() {
   const rules = window.MOCK.deadline_rules;
 
@@ -1565,26 +1711,32 @@ function renderRuleModal() {
   `;
 }
 
-// Global helpers for inline handlers
+// Global window event hooks for inline change listeners
 window.handleCourtFilter = function(val) {
   state.matterFilterCourt = val;
   renderMatterListTable();
 };
 
+window.handleGeneratorMatterChange = function(val) {
+  state.activeMatterId = val;
+  state.generatorCustomVars = {};
+  renderApp();
+};
+
+window.handleGeneratorTemplateChange = function(val) {
+  state.generatorTemplateId = val;
+  renderApp();
+};
+
+window.printLegalDocument = function() {
+  window.print();
+};
+
 window.handleFileSelect = function(event) {
   const file = event.target.files?.[0];
   if (file) {
-    const newDoc = {
-      id: 'doc_' + (window.MOCK.documents.length + 401),
-      matter_id: state.activeMatterId,
-      filename: file.name,
-      page_count: 5,
-      uploaded_at: 'الآن',
-      ocr_status: 'review'
-    };
-    window.MOCK.documents.unshift(newDoc);
-    state.activeDocumentId = newDoc.id;
-    state.activeScreen = 'review';
+    processUploadedPdf(file, state);
+    showToast(`تم استخراج بيانات ملف ${file.name} بالذكاء الاصطناعي بنجاح`);
     renderApp();
   }
 };
