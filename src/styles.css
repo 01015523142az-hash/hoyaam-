@@ -950,9 +950,10 @@ bdi, .mono-data {
   gap: 12px;
 }
 
-.upload-zone.dragover, .upload-zone:hover {
+.upload-zone.dragover, .upload-zone.drag-active, .upload-zone:hover {
   border-color: var(--accent);
   background: var(--inset);
+  transform: scale(1.005);
 }
 
 .upload-icon {

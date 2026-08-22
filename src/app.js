@@ -3,6 +3,8 @@ import { getUrgentAlerts, renderNotificationDropdown } from './notifications.js'
 import { renderDocumentGeneratorScreen } from './documentGenerator.js';
 import { renderArchiveSearchScreen } from './aiSearch.js';
 import { PDF_PRESETS, processUploadedPdf } from './pdfProcessor.js';
+import { renderFileUploadZone } from './components/FileUploadZone.js';
+import { supabaseService } from './services/supabaseService.js';
 
 // Expose MOCK globally as single database seam
 window.MOCK = MOCK;
@@ -320,6 +322,17 @@ function handleActionClick(e) {
       showToast(`تم حفظ المحرر الرسمي بملف القضية (${activeM.case_number})`);
       state.activeScreen = 'matter-detail';
       state.matterActiveTab = 'documents';
+      renderApp();
+      break;
+    }
+
+    case 'use-precedent-in-doc': {
+      const docTitle = target.getAttribute('data-doc-title') || 'سابقة قضائية';
+      if (!state.generatorCustomVars) state.generatorCustomVars = {};
+      const activeM = window.MOCK.matters.find(m => m.id === state.activeMatterId) || window.MOCK.matters[0];
+      state.generatorCustomVars.subject = `${activeM.subject} — استناداً إلى قضاء وسابقة (${docTitle})`;
+      state.activeScreen = 'generator';
+      showToast(`تم إدراج المبدأ القانوني من (${docTitle}) في محرك صياغة المذكرة بنجاح`);
       renderApp();
       break;
     }
@@ -1200,92 +1213,7 @@ function renderChronologyView(chronEntries) {
 
 // 5. Upload Screen with Intelligent PDF Extractor & Sample Presets
 function renderUploadScreen() {
-  const files = window.MOCK.documents;
-
-  return `
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">رفع ومعالجة ملفات القضايا (PDF)</h1>
-        <div class="page-subtitle">محرك الذكاء الاصطناعي لاستخراج أرقام القضايا، تواريخ الجلسات، والمحاكم تلقائياً</div>
-      </div>
-    </div>
-
-    <!-- Drag & Drop Zone -->
-    <div class="upload-zone" data-action="trigger-upload">
-      <input type="file" id="file-upload-input" style="display:none;" accept=".pdf,application/pdf" onchange="window.handleFileSelect(event)">
-      <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-      <div class="upload-title">اسحب وأفلت ملف PDF أو انقر لاختيار ملف من جهازك</div>
-      <div class="upload-desc">يقوم الذكاء الاصطناعي بقراءة النص الضوئي (OCR) واستخراج رقم الدعوى، تاريخ الجلسة، والمحكمة المختصة تلقائياً وتعبئتها في نموذج المراجعة.</div>
-      <button class="btn btn-outline" style="margin-block-start:8px;">اختيار ملف PDF من الجهاز</button>
-    </div>
-
-    <!-- Quick PDF Presets For Instant Verification -->
-    <div style="margin-block-start:20px;">
-      <div style="font-size:13px; font-weight:700; color:var(--text); margin-block-end:8px; display:flex; align-items:center; gap:6px;">
-        <span>📄 عينات ملفات PDF قانونية للاختبار الفوري السريع:</span>
-      </div>
-      <div class="upload-presets-grid">
-        ${PDF_PRESETS.map(p => `
-          <div class="upload-preset-card" data-action="process-preset-pdf" data-preset-id="${p.id}">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-            <div style="flex:1; overflow:hidden;">
-              <div style="font-size:12px; font-weight:600; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">${p.filename}</div>
-              <div style="font-size:10px; color:var(--text-dim);"><bdi>${p.page_count}</bdi> صفحات • استخراج ذكي فوري</div>
-            </div>
-            <span class="btn btn-outline btn-sm" style="font-size:10px; padding:2px 6px;">معالجة</span>
-          </div>
-        `).join('')}
-      </div>
-    </div>
-
-    <!-- Files in Processing Pipeline -->
-    <div class="progress-list" style="margin-block-start:24px;">
-      <h3 class="doc-heading" style="font-size:18px;">المستندات وسجل المعالجة</h3>
-
-      ${files.map(f => {
-        const stageIndex = f.ocr_status === 'queued' ? 1 : (f.ocr_status === 'reading' ? 2 : (f.ocr_status === 'extracting' ? 3 : 4));
-        return `
-          <div class="file-progress-card">
-            <div class="file-info-row">
-              <div class="filename">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path></svg>
-                ${f.filename} (<bdi>${f.page_count}</bdi> صفحات)
-              </div>
-              <div>
-                ${f.ocr_status === 'review' ? `
-                  <button class="btn btn-primary btn-sm" data-action="open-review-doc" data-doc-id="${f.id}">
-                    بدء المراجعة والاعتماد
-                  </button>
-                ` : `
-                  <span class="chip chip-stage">${f.uploaded_at}</span>
-                `}
-              </div>
-            </div>
-
-            <!-- Stepper -->
-            <div class="file-stepper">
-              <div class="file-step ${stageIndex >= 1 ? (stageIndex > 1 ? 'completed' : 'current') : ''}">
-                <div class="step-dot">${stageIndex > 1 ? '✓' : '١'}</div>
-                <div class="step-name">في الانتظار</div>
-              </div>
-              <div class="file-step ${stageIndex >= 2 ? (stageIndex > 2 ? 'completed' : 'current') : ''}">
-                <div class="step-dot">${stageIndex > 2 ? '✓' : '٢'}</div>
-                <div class="step-name">جاري القراءة (OCR)</div>
-              </div>
-              <div class="file-step ${stageIndex >= 3 ? (stageIndex > 3 ? 'completed' : 'current') : ''}">
-                <div class="step-dot">${stageIndex > 3 ? '✓' : '٣'}</div>
-                <div class="step-name">استخراج بالذكاء الاصطناعي</div>
-              </div>
-              <div class="file-step ${stageIndex >= 4 ? (f.ocr_status === 'done' ? 'completed' : 'current') : ''}">
-                <div class="step-dot">${f.ocr_status === 'done' ? '✓' : '٤'}</div>
-                <div class="step-name">بانتظار المراجعة</div>
-              </div>
-            </div>
-          </div>
-        `;
-      }).join('')}
-    </div>
-  `;
+  return renderFileUploadZone();
 }
 
 // 6. Review Queue Screen
@@ -1739,4 +1667,56 @@ window.handleFileSelect = function(event) {
     showToast(`تم استخراج بيانات ملف ${file.name} بالذكاء الاصطناعي بنجاح`);
     renderApp();
   }
+};
+
+window.handleDragEnter = function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const zone = document.getElementById('drag-drop-upload-zone');
+  if (zone) zone.classList.add('drag-active');
+  const msg = document.getElementById('drop-overlay-msg');
+  if (msg) msg.style.display = 'block';
+};
+
+window.handleDragOver = function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const zone = document.getElementById('drag-drop-upload-zone');
+  if (zone && !zone.classList.contains('drag-active')) {
+    zone.classList.add('drag-active');
+  }
+};
+
+window.handleDragLeave = function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  // If moving out of the container
+  if (!e.currentTarget.contains(e.relatedTarget)) {
+    const zone = document.getElementById('drag-drop-upload-zone');
+    if (zone) zone.classList.remove('drag-active');
+    const msg = document.getElementById('drop-overlay-msg');
+    if (msg) msg.style.display = 'none';
+  }
+};
+
+window.handleFileDrop = function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const zone = document.getElementById('drag-drop-upload-zone');
+  if (zone) zone.classList.remove('drag-active');
+  const msg = document.getElementById('drop-overlay-msg');
+  if (msg) msg.style.display = 'none';
+
+  const file = e.dataTransfer?.files?.[0];
+  if (file) {
+    processUploadedPdf(file, state);
+    showToast(`تم إفلات ملف (${file.name}) وبدء استخراج البيانات بالذكاء الاصطناعي بنجاح`);
+    renderApp();
+  }
+};
+
+window.handleArchiveFilterChange = function(filterType, val) {
+  if (filterType === 'docType') state.archiveFilterDocType = val;
+  if (filterType === 'court') state.archiveFilterCourt = val;
+  renderApp();
 };
