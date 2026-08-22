@@ -1,0 +1,6 @@
+{
+  "name": "منظومة إدارة القضايا والتقاضي",
+  "description": "نظام تقاضٍ وإدارة قضايا مخصص لمكاتب المحاماة المصرية - باللغة العربية، متابعة الجلسات والمواعيد الإجرائية ومراجعة المستندات والأرشيف",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
