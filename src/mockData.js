@@ -536,6 +536,9 @@ export const MOCK = {
       active: true
     }
   ],
+  get rules() {
+    return this.deadline_rules;
+  },
 
   archive_corpus: [
     {

@@ -18,15 +18,19 @@ try {
 }
 
 // In-Memory / Local Storage Seam synced with MOCK
+const defaultRules = [...(MOCK.deadline_rules || MOCK.rules || [])];
+
 const db = {
-  matters: [...MOCK.matters],
-  hearings: [...MOCK.hearings],
-  deadlines: [...MOCK.deadlines],
-  documents: [...MOCK.documents],
-  extractions: [...MOCK.extractions],
-  templates: [...MOCK.templates],
-  archive_corpus: [...MOCK.archive_corpus],
-  rules: [...MOCK.rules]
+  matters: [...(MOCK.matters || [])],
+  hearings: [...(MOCK.hearings || [])],
+  deadlines: [...(MOCK.deadlines || [])],
+  documents: [...(MOCK.documents || [])],
+  extractions: [...(MOCK.extractions || [])],
+  chronology: [...(MOCK.chronology || [])],
+  templates: [...(MOCK.templates || [])],
+  archive_corpus: [...(MOCK.archive_corpus || [])],
+  deadline_rules: defaultRules,
+  rules: defaultRules
 };
 
 // Sync globally with window.MOCK for backwards compatibility
